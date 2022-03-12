@@ -4,7 +4,8 @@
 App that monitors the Danish equivalent of Craigslist (Den Blå Avis - DBA) for new specific items. A telegram is sent whenever a new item is added given a specific category and filters. DBA has an 'agent' feature that does the same job, but ususally notifications come delayed, which is a problem for items that need very fast reaction. 
 
 Technologies used here:
-- Web monitoring/scraping
+- Web monitoring
+- Virutal browser (selenium)
 - SQLite database
 - Telegram bot
 - Crontab

@@ -1,3 +1,4 @@
+""" File containing main database class. Includes *item* *type* *status* tables."""
 import sqlite3
 import pandas as pd
 

@@ -3,3 +3,4 @@ pandas
 requests
 beautifulsoup4
 yapf
+selenium==3.141.0

@@ -132,3 +132,4 @@ dmypy.json
 etc/
 *.db
 *.ipynb
+*.exe

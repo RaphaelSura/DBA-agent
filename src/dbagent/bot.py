@@ -5,7 +5,6 @@ import numpy as np
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.webdriver.firefox.firefox_binary import FirefoxBinary
 from selenium.webdriver.firefox.options import Options
 from dbagent.database import DBAData
 
@@ -98,9 +97,9 @@ class WebpageMonitor:
         # status is 2 (inactive) for all, then set 1 (active) for all postings
         # self.database.update_status(self.active_posts)
 
-    def notify_user(self, pet_info):
+    def notify_user(self, info):
         # format the message:
-        item_type, price, location, url = pet_info
+        item_type, price, location, url = info
         msg = f"💥 New {item_type} on DBA 💥\nlocation: {location}\nPrice: {price}\n\n{url}"
         # send the telegram
         send_text = f"https://api.telegram.org/bot{self.token}/sendMessage?chat_id={self.chat_id}&parse_mode=Markdown&text={msg}"
