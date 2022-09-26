@@ -1,27 +1,21 @@
 """ File where the main bot is defined: class WebpageMonitor"""
 from datetime import datetime
 from pathlib import Path
-import numpy as np
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
-from dbagent.database import DBAData
+from dbagent.database import BikeDBAData
 
 
 class WebpageMonitor:
     """ Main class fetching data on website, communicating with database and sending telegram """
 
-    def __init__(self, website: str, item_type: str, database: DBAData,
-                 telegram_info: Path, driver: Path):
+    def __init__(self, website: str, database: BikeDBAData, driver: Path):
         self.website = website
-        self.item_type = item_type
         self.active_postings = []
         self.page_items = []
         self.database = database
-
-        # credentials for sending telegram
-        self.token, self.chat_id = np.loadtxt(telegram_info, dtype=str)
         self.driver = driver
 
     def fetch_url_data(self, specific_url):
@@ -65,6 +59,7 @@ class WebpageMonitor:
         for item in self.page_items:
             link_url = item.find('a', {'class': 'listingLink'}).get('href')
             price = item.find('td', {'title': 'Pris'}).text.strip()
+            price = int(price.split(" kr")[0].replace(".", ""))
             description = item.find_all(
                 'a',
                 {'class': 'listingLink'})[1].text.strip().replace('\n', ' ')
@@ -72,35 +67,77 @@ class WebpageMonitor:
                 'class': "details"
             }).find_all('span')[1].text.strip()
             date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            status_id = 1
+            #             status_id = 1
+            # parse description for brand, frame_size, gears, frame_number
+            first_part_desc = description.split("cm stel, ")[0]
+
+            _, brand, frame_size = first_part_desc.split(", ")
+            frame_size = int(frame_size)
+            second_part_desc = description.replace(
+                first_part_desc + "cm stel, ", "")[:50].split(", ")
+            #             print(second_part_desc)
+            gears = None
+            frame_number = None
+            for desc in second_part_desc[:2]:
+                if "gear" in desc:
+                    try:
+                        gears = int(desc.split(" gear")[0])
+                    except ValueError:
+                        gears = 1
+
+                if "stelnr." in desc:
+                    frame_number = desc.split("stelnr. ")[1]
 
             # aggregate data
-            data = (link_url, self.item_type, price, location, description,
-                    date, status_id)
+            data = (link_url, price, brand, frame_size, gears, frame_number,
+                    location, description, date, True, False)
 
+            #             print(data)
             # add to the list of active posts
             self.active_postings.append(data)
 
+        self.active_urls = [d[0] for d in self.active_postings]
+        self.database.update_active_status(self.active_urls)
+
     def detect_new_postings(self):
         for data in self.active_postings:
-            url = data[0]
-            # returns id if exists else None
-            curr_post_id = self.database.cur.execute(
-                f"SELECT id FROM item WHERE url = '{url}'").fetchone()
+
+            self.database.cur.execute(
+                f"SELECT * FROM postings WHERE url = '{data[0]}'")
+
             # if empty -> new data -> add to database
-            if not curr_post_id:
-                self.database.insert_pet(data)
-                useful_data = (self.item_type, data[2], data[3], data[0])
-                self.notify_user(useful_data)
+            if not self.database.cur.fetchone():
+                self.database.insert(data)
 
-        # update status in database - need to work on this
-        # status is 2 (inactive) for all, then set 1 (active) for all postings
-        # self.database.update_status(self.active_posts)
 
-    def notify_user(self, info):
+class TelegramBot:
+    """Handles sending messages to user via Telegram
+    """
+
+    def __init__(self, token, chat_id, database):
+        self.token = token
+        self.chat_id = chat_id
+        self.database = database
+
+    def notify_user(self):
+        # check database for sent=False
+        self.database.cur.execute(
+            "SELECT url, price, location FROM postings WHERE sent_to_user = False"
+        )
+        unsent_postings = self.database.cur.fetchall()
+
         # format the message:
-        item_type, price, location, url = info
-        msg = f"💥 New {item_type} on DBA 💥\nlocation: {location}\nPrice: {price}\n\n{url}"
+        for url, price, location in unsent_postings:
+            msg = f"💥 New bike on DBA 💥\nlocation: {location}\nPrice: {price}\n\n{url}"
+            # send the telegram
+            send_text = f"https://api.telegram.org/bot{self.token}/sendMessage?chat_id={self.chat_id}&parse_mode=Markdown&text={msg}"
+            requests.get(send_text)
+            # update sent status in database
+            self.database.update_sent_status(url)
+
+    def send_warning(self):
+        date_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        msg = f"⚠️ Program failed to run on {date_now}. Check log file ⚠️"
         # send the telegram
         send_text = f"https://api.telegram.org/bot{self.token}/sendMessage?chat_id={self.chat_id}&parse_mode=Markdown&text={msg}"
         requests.get(send_text)
