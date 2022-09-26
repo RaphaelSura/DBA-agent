@@ -1,75 +1,58 @@
-""" File containing main database class. Includes *item* *type* *status* tables."""
-import sqlite3
-import pandas as pd
+""" File containing main database class. Includes *postings* table."""
+import psycopg2
 
 
-class DBAData:
+class BikeDBAData:
 
-    def __init__(self, db_path):
-        self.conn = sqlite3.connect(db_path)
+    def __init__(self):
+        self.conn = psycopg2.connect(
+            "dbname='dba' user='postgres' password='postgres' host='127.0.0.1' port='5432'"
+        )
         self.cur = self.conn.cursor()
         self.create()
 
     def create(self):
         self.cur.execute("""
-        CREATE TABLE IF NOT EXISTS item
-        (id INTEGER PRIMARY KEY,
-        type_id INTEGER REFERENCES type(id),
-        price TEXT,
-        location TEXT,
+        CREATE TABLE IF NOT EXISTS postings
+        (url TEXT NOT NULL UNIQUE,
+        price INTEGER,
+        brand VARCHAR(200),
+        frame_size INT,
+        gears INT,
+        frame_number VARCHAR(50),
+        location VARCHAR(100),
         description TEXT,
-        url TEXT NOT NULL UNIQUE,
-        creation TIMESTAMP,
-        status_id INTEGER REFERENCES status(id))
+        created TIMESTAMP,
+        active BOOL,
+        sent_to_user BOOL)
         """)
-
-        self.cur.execute("""
-        CREATE TABLE IF NOT EXISTS type
-        (id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE)
-        """)
-
-        self.cur.execute("""
-        CREATE TABLE IF NOT EXISTS status
-        (id INTEGER PRIMARY KEY,
-        value TEXT NOT NULL UNIQUE)
-        """)
-
-        # add active (1) and inactive (2) to status table
-        if pd.read_sql("SELECT * FROM status", con=self.conn).empty:
-            self.cur.execute("INSERT INTO status VALUES (NULL,?)",
-                             ('active', ))
-            self.cur.execute("INSERT INTO status VALUES (NULL,?)",
-                             ('inactive', ))
 
         self.conn.commit()
 
-    def insert_pet(self, args):
-        link_url, item_type, price, location, description, date, status_id = args
+    def insert(self, args):
 
-        # convert race -> race_id
-        type_id = self.cur.execute(
-            f"SELECT id FROM type WHERE name = '{item_type}'").fetchone()
-        if not type_id:
-            self.insert_type(item_type)
-            type_id = self.cur.execute(
-                f"SELECT id FROM type WHERE name = '{item_type}'").fetchone()
-
-        data = (type_id[0], price, location, description, link_url, date,
-                status_id)
-        self.cur.execute("INSERT INTO item VALUES (NULL,?,?,?,?,?,?,?)", data)
+        self.cur.execute("INSERT INTO postings VALUES %s", (args, ))
         self.conn.commit()
 
-    def insert_type(self, type_):
-        self.cur.execute("INSERT INTO type VALUES (NULL,?)", (type_, ))
+    def update_active_status(self, active_urls):
+        """ updates active status to FALSE for non existing postings.
+            args: active_urls [tuple]: currently active postings """
+        active_urls = tuple(active_urls)
+        self.cur.execute(f"""
+            UPDATE postings
+            SET active = FALSE
+            WHERE url NOT IN {active_urls}""")
         self.conn.commit()
 
-    def update_status(self, active_ids):
-        pass
-        # self.cur.execute(
-        #     f"""UPDATE INTO pet VALUES (NULL,?)
-        # WHERE id NOT IN {active_ids}""", (2, ))
-        # self.conn.commit()
+    def update_sent_status(self, url):
+        """ updates sent_to_user to TRUE after it is sent.
+            args: url [string]: primary key in DB to find row."""
+
+        self.cur.execute(f"""
+            UPDATE postings
+            SET sent_to_user = TRUE
+            WHERE url = '{url}'""")
+        self.conn.commit()
 
     # method to destroy the object: is run when the script is exited
     def __del__(self):
